@@ -1,0 +1,8 @@
+# Whitelist: this directory also holds libatsc3 (its own repo), Ghidra
+# projects built from proprietary vendor libraries, captures, logs, notes and a
+# local venv. None of that belongs here, so ignore everything and list what is
+# tracked.
+/*
+!/.gitignore
+!/README.md
+!/atsc3-player.py
