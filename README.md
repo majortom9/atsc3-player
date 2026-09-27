@@ -9,14 +9,21 @@ ROUTE/DASH objects itself (LCT/ALC parsing, no libatsc3), and then either:
   playback on another machine.
 
 Tested on Linux Mint 22 (Python 3.12) with a GTMEDIA HDTV Mate (USB
-`048d:9306`) on the modified koreapyj it930x/cxd2878 driver, against a live
+`048d:9306`) on the modified koreapyj it930x/cxd2878 driver
+([majortom9/cxd28xx](https://github.com/majortom9/cxd28xx)), against a live
 ATSC 3.0 broadcast.
+
+For a C alternative with a terminal UI, the same fixes for this setup are in
+the libatsc3 fork [majortom9/libatsc3](https://github.com/majortom9/libatsc3)
+(`atsc3_listener_metrics_ncurses_httpd_isobmff`).
 
 ## Requirements
 
 - **A tuner driver that exposes ATSC 3.0 ALP as a network interface.** The
   script only reads `alp0`; something else must tune, lock and bring the
-  interface up (see [Running](#running)).
+  interface up (see [Running](#running)). The tested driver and its
+  `atsc3-zap` tuning tool (in `utils/`) are in
+  [majortom9/cxd28xx](https://github.com/majortom9/cxd28xx).
 - **Python 3.8+.** Standard library only; nothing to `pip install`.
 - **For local playback:** an mpv build with an AC-4 decoder, and its ffmpeg
   libraries. The script expects them at these fixed paths:
