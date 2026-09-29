@@ -97,7 +97,7 @@ sudo sysctl -w net.core.rmem_max=16777216
    the machine's LAN address:
 
    ```sh
-   mpv http://192.168.1.110:8080/video.mp4 --audio-file=http://192.168.1.110:8080/audio.mp4
+   mpv http://TUNER-HOST:8080/video.mp4 --audio-file=http://TUNER-HOST:8080/audio.mp4
    ```
 
    Each viewer joins at the newest segment, and several can watch at once.

@@ -6,8 +6,8 @@
 # from a Raspberry Pi running Arch Linux ARM (armv7h) with libdrm and
 # systemd-libs installed, so they match what the package will run against.
 #
-#   ./make-sysroot.sh alarm@pi4          -> ./sysroot-armv7h
-#   ./make-sysroot.sh alarm@pi4 /path    -> /path
+#   ./make-sysroot.sh USER@PI-HOST          -> ./sysroot-armv7h
+#   ./make-sysroot.sh USER@PI-HOST /path    -> /path
 
 set -euo pipefail
 
