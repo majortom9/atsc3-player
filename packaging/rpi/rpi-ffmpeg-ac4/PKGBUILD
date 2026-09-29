@@ -1,0 +1,93 @@
+# Maintainer: Bill Murphy <gc2majortom@gmail.com>
+
+# Raspberry Pi's ffmpeg fork (jc-kynesim/rpi-ffmpeg, test/8.1.2/main) plus the
+# jellyfin-ffmpeg AC-4 decoder (patch 0054) and the atsc3-player damaged-frame
+# fix (0101), from branch "ac4" of github.com/majortom9/rpi-ffmpeg.
+#
+# rpi-ffmpeg drives the Pi 4's stateless HEVC decoder (rpi-hevc-dec) through
+# the V4L2 request API, so ATSC 3.0 HEVC decodes in hardware while AC-4
+# decodes in software. On a Pi 3B (no HEVC hardware) it falls back to
+# software decoding.
+#
+# Two ways to build the same armv7h package:
+#   on the Pi itself:   makepkg -s
+#   cross, on x86_64:   ../makepkg-armv7h      (needs the ARM toolchain in /opt
+#                       and a sysroot, see make-sysroot.sh)
+#
+# Installs side by side under /usr/lib/rpi-ffmpeg-ac4, never over the system
+# ffmpeg. mpv-ac4 is built against it.
+
+pkgname=rpi-ffmpeg-ac4
+_commit=159f5bd8a10f18ca496daa6569d4ae4eb1fd6624
+pkgver=8.1.2
+pkgrel=1
+pkgdesc="Raspberry Pi ffmpeg (V4L2 request HEVC hardware decode) with the ATSC 3.0 AC-4 decoder, in /usr/lib/rpi-ffmpeg-ac4"
+arch=('armv7h')
+url="https://github.com/majortom9/rpi-ffmpeg"
+license=('GPL-3.0-or-later')
+depends=('glibc' 'libdrm' 'systemd-libs')
+makedepends=('git' 'pkgconf')
+# we pass our own compiler flags (the host's are x86-64 when cross-compiling)
+# and strip with the right strip ourselves
+options=('!buildflags' '!strip' '!debug' '!lto')
+source=("rpi-ffmpeg::git+https://github.com/majortom9/rpi-ffmpeg.git#commit=${_commit}")
+sha256sums=('SKIP')
+
+_prefix=/usr/lib/rpi-ffmpeg-ac4
+
+_native() {
+  case "$(uname -m)" in armv7l|armv8l|aarch64) return 0 ;; esac
+  return 1
+}
+
+build() {
+  cd rpi-ffmpeg
+
+  local cross=() ldextra=()
+  if ! _native; then
+    local sysroot="${SYSROOT:-${startdir}/sysroot-armv7h}"
+    [[ -f "${sysroot}/usr/lib/pkgconfig/libdrm.pc" ]] ||
+      { error "no armv7h sysroot at ${sysroot}; run make-sysroot.sh first"; return 1; }
+    # pkg-config only ever sees the armv7h sysroot, never the build host's libs
+    export PKG_CONFIG_LIBDIR="${sysroot}/usr/lib/pkgconfig"
+    export PKG_CONFIG_SYSROOT_DIR="${sysroot}"
+    cross=(--enable-cross-compile --arch=arm --cpu=cortex-a7 --target-os=linux
+           --cross-prefix=arm-none-linux-gnueabihf-)
+    ldextra=(-Wl,-rpath-link,"${sysroot}/usr/lib")
+  fi
+
+  # options follow rpi-ffmpeg's own pi-util/conf_native.sh for armv7
+  ./configure \
+    --prefix="${_prefix}" \
+    "${cross[@]}" \
+    --pkg-config=pkg-config \
+    --disable-autodetect \
+    --disable-thumb \
+    --enable-neon \
+    --enable-sand \
+    --enable-v4l2-request \
+    --enable-v4l2-m2m \
+    --enable-libdrm \
+    --enable-libudev \
+    --enable-shared \
+    --disable-static \
+    --enable-gpl \
+    --enable-version3 \
+    --disable-doc \
+    --disable-debug \
+    --disable-stripping \
+    --extra-version=rpi-ac4 \
+    --extra-cflags="-O2 -pipe -mfpu=neon-vfpv4 -mfloat-abi=hard -marm" \
+    --extra-ldflags="-Wl,-rpath,${_prefix}/lib ${ldextra[*]}"
+  make
+}
+
+package() {
+  cd rpi-ffmpeg
+  make DESTDIR="${pkgdir}" install
+  local strip=strip
+  _native || strip=arm-none-linux-gnueabihf-strip
+  find "${pkgdir}${_prefix}/bin" "${pkgdir}${_prefix}/lib" -type f \
+    \( -name 'ff*' -o -name '*.so*' \) -exec "${strip}" --strip-unneeded {} +
+  install -Dm644 LICENSE.md "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE.md"
+}

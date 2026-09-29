@@ -1,0 +1,33 @@
+Index: FFmpeg/libavcodec/ac4dec.c
+===================================================================
+--- FFmpeg.orig/libavcodec/ac4dec.c
++++ FFmpeg/libavcodec/ac4dec.c
+@@ -1630,6 +1630,13 @@
+     s->frame_rate_index = get_bits(gb, 4);
+     av_log(s->avctx, AV_LOG_DEBUG, "frame_rate_index: %d\n", s->frame_rate_index);
+     s->frame_len_base = frame_len_base_48khz[s->frame_rate_index];
++    /* Indices 14 and 15 are reserved (length 0); a damaged frame can carry
++     * them, and get_transfer_length_from_idx() would then av_assert0(). */
++    if (!s->frame_len_base) {
++        av_log(s->avctx, AV_LOG_ERROR, "reserved frame_rate_index %d\n",
++               s->frame_rate_index);
++        return AVERROR_INVALIDDATA;
++    }
+     s->num_ts_in_ats = get_num_ts_in_ats(s->frame_len_base);
+     s->frame_len_base_idx = frame_len_base_idx_48khz[s->frame_rate_index];
+     av_log(s->avctx, AV_LOG_DEBUG, "frame_len_base: %d\n", s->frame_len_base);
+@@ -5115,7 +5122,13 @@
+         const uint16_t *sfb_offset = get_sfb_offset(transf_length_g);
+         int max_sfb = get_max_sfb(s, ssch, g);
+ 
+-        av_assert2(max_sfb < get_sfb_size(transf_length_g));
++        /* A damaged frame can signal more bands than the table holds:
++         * leave the channel silent for this frame rather than reading past
++         * sfb_offset[] and writing past spec_reord[]. */
++        if (max_sfb >= get_sfb_size(transf_length_g)) {
++            memset(ssch->spec_reord, 0, sizeof(ssch->spec_reord));
++            return;
++        }
+ 
+         for (int sfb = 0; sfb < max_sfb; sfb++) {
+             for (int w = 0; w < ssch->scp.num_win_in_group[g]; w++) {

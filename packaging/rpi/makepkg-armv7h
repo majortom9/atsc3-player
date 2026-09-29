@@ -1,0 +1,4 @@
+#!/bin/bash
+# makepkg-armv7h script
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+makepkg --config "$DIR/makepkg-armv7h.conf" "$@"

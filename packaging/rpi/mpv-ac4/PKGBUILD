@@ -1,0 +1,85 @@
+# Maintainer: Bill Murphy <gc2majortom@gmail.com>
+
+# mpv linked against rpi-ffmpeg-ac4 (/usr/lib/rpi-ffmpeg-ac4): AC-4 audio for
+# ATSC 3.0 plus the Pi 4's rpi-hevc-dec through --hwdec=drm.
+#
+# Built NATIVELY on the Pi (plain `makepkg -s`), not cross-compiled: mpv needs
+# the Pi's own GPU, display and audio libraries, which the installed system mpv
+# already pulled in.
+#
+# Installed side by side with the system mpv: everything lives in
+# /usr/lib/mpv-ac4, the command is /usr/bin/mpv-ac4, and the system mpv and
+# ffmpeg are untouched.
+
+pkgname=mpv-ac4
+pkgver=0.41.0
+pkgrel=2
+pkgdesc="mpv built against rpi-ffmpeg-ac4 (AC-4 audio, Pi 4 HEVC hardware decode), as mpv-ac4"
+arch=('armv7h' 'aarch64')
+url="https://mpv.io"
+license=('GPL-2.0-or-later')
+# the system mpv's own dependency list, minus ffmpeg: meson links whatever of
+# these is installed, and installing the system mpv already pulled them in
+depends=('rpi-ffmpeg-ac4' 'alsa-lib' 'desktop-file-utils' 'glibc' 'hicolor-icon-theme'
+         'jack' 'lcms2' 'libarchive' 'libass' 'libbluray' 'libcdio' 'libcdio-paranoia'
+         'libdisplay-info' 'libdrm' 'libdvdnav' 'libdvdread' 'libegl' 'libgl' 'libglvnd'
+         'libjpeg-turbo' 'libplacebo' 'libpulse' 'libsixel' 'libva' 'libvdpau' 'libx11'
+         'libxext' 'libxkbcommon' 'libxpresent' 'libxrandr' 'libxss' 'libxv' 'luajit'
+         'mesa' 'mujs' 'libpipewire' 'rubberband' 'sdl2' 'openal' 'uchardet'
+         'vapoursynth' 'vulkan-icd-loader' 'wayland' 'zlib')
+makedepends=('git' 'meson' 'ninja' 'python' 'wayland-protocols' 'vulkan-headers')
+backup=("usr/lib/mpv-ac4/etc/mpv/mpv.conf")
+source=("mpv::git+https://github.com/mpv-player/mpv.git#tag=v${pkgver}")
+sha256sums=('SKIP')
+
+_ffprefix=/usr/lib/rpi-ffmpeg-ac4
+_prefix=/usr/lib/mpv-ac4
+
+build() {
+  # find rpi-ffmpeg-ac4, not the system ffmpeg, and load it at run time too
+  export PKG_CONFIG_PATH="${_ffprefix}/lib/pkgconfig"
+  export LDFLAGS+=" -Wl,-rpath,${_ffprefix}/lib"
+
+  # drm/egl-drm/gbm are what --hwdec=drm and --vo=gpu --gpu-context=drm need
+  meson setup build mpv \
+    --prefix="${_prefix}" \
+    --buildtype=plain \
+    -Db_lto=false \
+    -Dlibmpv=false \
+    -Dcplayer=true \
+    -Dmanpage-build=disabled \
+    -Dhtml-build=disabled \
+    -Dpdf-build=disabled \
+    -Ddrm=enabled \
+    -Degl-drm=enabled \
+    -Dgbm=enabled \
+    -Dcaca=disabled \
+    -Dsndio=disabled \
+    -Dlua=luajit
+
+  meson compile -C build
+
+  # rpi-ffmpeg-ac4 is libavcodec.so.62; the system ffmpeg is .so.63
+  readelf -d build/mpv | grep -q 'libavcodec\.so\.62' ||
+    { echo "ERROR: mpv linked the system ffmpeg, not ${_ffprefix}"; return 1; }
+}
+
+package() {
+  meson install -C build --destdir "${pkgdir}"
+  install -dm755 "${pkgdir}/usr/bin"
+  ln -s "${_prefix}/bin/mpv" "${pkgdir}/usr/bin/mpv-ac4"
+
+  # mpv-ac4's own system config (MPV_CONFDIR is ${_prefix}/etc/mpv); only
+  # mpv-ac4 reads it, and ~/.config/mpv still overrides it
+  install -Dm644 /dev/stdin "${pkgdir}${_prefix}/etc/mpv/mpv.conf" <<'CONF'
+# Defaults for the Raspberry Pi 4, measured with 720p60 HEVC Main 10 ATSC 3.0.
+# gpu-next (libplacebo) leaks a GPU fence fd per frame here (Mesa V3D, X11)
+# and stops rendering once it hits the 1024 open-file limit; gpu doesn't.
+vo=gpu
+# rpi-hevc-dec through rpi-ffmpeg-ac4's V4L2 request decoder
+hwdec=drm
+# the V3D GPU can't scale 10-bit 720p60 to a large window at full rate with
+# the default high-quality scalers
+profile=fast
+CONF
+}

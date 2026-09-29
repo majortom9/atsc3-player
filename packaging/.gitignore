@@ -1,0 +1,8 @@
+# makepkg output, source clones and the cross sysroot
+src/
+pkg/
+*.pkg.tar.*
+*.log
+sysroot-armv7h/
+rpi-ffmpeg/
+mpv/
