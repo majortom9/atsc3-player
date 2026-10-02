@@ -1,8 +1,9 @@
 # Maintainer: Bill Murphy <gc2majortom@gmail.com>
 
 # Raspberry Pi's ffmpeg fork (jc-kynesim/rpi-ffmpeg, test/8.1.2/main) plus the
-# jellyfin-ffmpeg AC-4 decoder (patch 0054) and the atsc3-player damaged-frame
-# fix (0101), from branch "ac4" of github.com/majortom9/rpi-ffmpeg.
+# jellyfin-ffmpeg AC-4 decoder (patch 0054) and the atsc3-player fixes for
+# damaged frames (0101: reject instead of asserting; 0102: reset the decoder
+# instead of buzzing), from branch "ac4" of github.com/majortom9/rpi-ffmpeg.
 #
 # rpi-ffmpeg drives the Pi 4's stateless HEVC decoder (rpi-hevc-dec) through
 # the V4L2 request API, so ATSC 3.0 HEVC decodes in hardware while AC-4
@@ -18,9 +19,9 @@
 # ffmpeg. mpv-ac4 is built against it.
 
 pkgname=rpi-ffmpeg-ac4
-_commit=159f5bd8a10f18ca496daa6569d4ae4eb1fd6624
+_commit=315bb6d854d13bbd98376659c0eec6c388bbe5ef
 pkgver=8.1.2
-pkgrel=1
+pkgrel=2
 pkgdesc="Raspberry Pi ffmpeg (V4L2 request HEVC hardware decode) with the ATSC 3.0 AC-4 decoder, in /usr/lib/rpi-ffmpeg-ac4"
 arch=('armv7h')
 url="https://github.com/majortom9/rpi-ffmpeg"

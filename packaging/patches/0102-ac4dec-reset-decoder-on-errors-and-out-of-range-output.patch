@@ -1,0 +1,67 @@
+Index: FFmpeg/libavcodec/ac4dec.c
+===================================================================
+--- FFmpeg.orig/libavcodec/ac4dec.c
++++ FFmpeg/libavcodec/ac4dec.c
+@@ -6584,6 +6584,30 @@
+     qmf_synthesis(s, ssch, pcm);
+ }
+ 
++static av_cold int ac4_decode_end(AVCodecContext *avctx);
++
++/*
++ * Make the decoder exactly like a newly opened one. A damaged frame that
++ * still parses can leave huge values in state carried between frames
++ * (overlap-add, QMF and A-SPX/A-CPL histories), and every later frame then
++ * decodes to full-scale noise until the player recreates the decoder;
++ * clearing only part of the context isn't enough (e.g. the A-SPX master
++ * tables are only rebuilt on a decoder's first frame). Decoding restarts
++ * at the next I-frame; the AVOptions are kept.
++ */
++static int ac4_reset_state(AC4DecodeContext *s)
++{
++    AVCodecContext *avctx = s->avctx;
++    AVClass *class = s->class;
++    int target_presentation = s->target_presentation;
++
++    ac4_decode_end(avctx);
++    memset(s, 0, sizeof(*s));
++    s->class = class;
++    s->target_presentation = target_presentation;
++    return ac4_decode_init(avctx);
++}
++
+ static int ac4_decode_frame(AVCodecContext *avctx, AVFrame *frame,
+                             int *got_frame_ptr, AVPacket *avpkt)
+ {
+@@ -6707,6 +6731,21 @@
+         decode_channel(s, dch, (float *)frame->extended_data[ch]);
+     }
+ 
++    /* A garbage frame can parse without error but decode to NaN or to
++     * values far beyond full scale; never output that, and don't keep it. */
++    for (int ch = 0; ch < avctx->ch_layout.nb_channels; ch++) {
++        const float *pcm = (const float *)frame->extended_data[ch];
++
++        for (int i = 0; i < frame->nb_samples; i++) {
++            if (!isfinite(pcm[i]) || fabsf(pcm[i]) > 32.0f) {
++                av_log(s->avctx, AV_LOG_ERROR,
++                       "frame decoded to out-of-range samples, resetting decoder state\n");
++                ret = AVERROR_INVALIDDATA;
++                goto error;
++            }
++        }
++    }
++
+     if (s->iframe_global)
+         frame->flags |= AV_FRAME_FLAG_KEY;
+ 
+@@ -6717,7 +6756,8 @@
+     return avpkt->size;
+ 
+ error:
+-    s->have_iframe = 0;
++    if (ac4_reset_state(s) < 0)
++        av_log(avctx, AV_LOG_ERROR, "could not reset the decoder\n");
+ 
+     *got_frame_ptr = 0;
+ 

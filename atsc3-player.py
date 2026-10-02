@@ -23,6 +23,11 @@ TRACKS = {
     "audio": ("audio-init_tsi_200_toi_1.mp4", "segment_tsi_200_toi_"),
 }
 
+# ROUTE objects here are ~1MB DASH segments; anything claiming to start
+# beyond this is a corrupt header, not a real offset.
+_MAX_OBJECT_BYTES = 32 * 1024 * 1024
+
+
 class RouteReassembler:
     def __init__(self, cache_dir):
         self.cache_dir = cache_dir
@@ -140,15 +145,19 @@ class RouteReassembler:
             # exactly this field's size and typical zero value, which threw
             # off ISO-BMFF box parsing (moov unreachable) by 4 bytes.
             #
-            # REVERTED: tried using ESI as a symbol-index write offset
-            # (esi * 1400) to tolerate reordering, on a theory that the
-            # deterministic-looking corruption meant something other than
-            # real loss. Wrong - ESI is not a small sequential 0,1,2,...
-            # index on this stream; a single large ESI value blew objects
-            # up to ~90MB (65535*1400) via zero-padding, which was also
-            # slow enough to cause real kernel-level packet drops that
-            # weren't happening before. Back to simple in-order append.
+            # For ROUTE source flows (Compact No-Code FEC, A/331 A.3.5.1)
+            # that field is start_offset: this packet's byte offset within
+            # the object (verified live: 0, 1384, 2784, ... per TOI). An
+            # earlier attempt treated it as a packet index and multiplied it
+            # by 1400, which blew objects up to ~90MB; used as the byte
+            # offset it is, a lost packet leaves a hole in place instead of
+            # shifting everything after it - which fed the AC-4 decoder a
+            # second or more of misaligned garbage and could leave it
+            # producing a loud buzz until restarted.
+            start_offset = struct.unpack('!I', payload[hdr_len:hdr_len + 4])[0]
             file_data = payload[hdr_len + 4:]
+            if start_offset > _MAX_OBJECT_BYTES:
+                return
             obj_key = (tsi, toi)
             now = time.time()
 
@@ -179,7 +188,8 @@ class RouteReassembler:
             # restart directly: if this packet's data exactly matches what's
             # already at the start of the buffer, it's a fresh retransmission
             # of the same object, not a continuation - reset instead of append.
-            is_retransmission_restart = (existing_buf is not None and len(existing_buf) >= len(file_data)
+            is_retransmission_restart = (start_offset == 0 and existing_buf is not None
+                                          and len(existing_buf) >= len(file_data)
                                           and bytes(existing_buf[:len(file_data)]) == file_data)
             # A retransmission restart IS the completion signal for this
             # object: a carousel resend starting over from byte 0 only makes
@@ -204,7 +214,11 @@ class RouteReassembler:
                 self.closed[obj_key] = False
 
             self.last_seen[obj_key] = now
-            self.objects[obj_key].extend(file_data)
+            buf = self.objects[obj_key]
+            end = start_offset + len(file_data)
+            if end > len(buf):
+                buf.extend(bytes(end - len(buf)))   # a lost packet before this one stays zero-filled
+            buf[start_offset:end] = file_data
 
             _REORDER_GRACE_SECONDS = 3.0
             for key in list(self.objects.keys()):
