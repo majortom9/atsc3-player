@@ -7,3 +7,8 @@
 !/README.md
 !/atsc3-player.py
 !/packaging/
+!/atsc3-gui.py
+!/atsc3player/
+!/tests/
+__pycache__/
+*.pyc
