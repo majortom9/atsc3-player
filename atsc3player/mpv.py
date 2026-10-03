@@ -47,7 +47,7 @@ class Mpv:
             if os.path.exists(xauth):
                 env["XAUTHORITY"] = xauth
         self.ipc_path = os.path.join(tempfile.gettempdir(), f"atsc3-mpv-{os.getpid()}.sock")
-        args = [self.binary, video_url, f"--audio-file={audio_url}",
+        args = [self.binary, video_url] + ([f"--audio-file={audio_url}"] if audio_url else []) + [
                 f"--input-ipc-server={self.ipc_path}", f"--title={title}",
                 "--force-window=yes", "--keep-open=no", *extra_args]
         log("[mpv] " + " ".join(args))

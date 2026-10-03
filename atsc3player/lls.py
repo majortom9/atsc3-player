@@ -47,6 +47,7 @@ class Service:
     sls_src: str = ""
     global_id: str = ""
     extra: dict = field(default_factory=dict)
+    standard: int = 3               # 3 = ATSC 3.0 service, 1 = ATSC 1.0 virtual channel
 
     @property
     def channel(self):
@@ -58,7 +59,10 @@ class Service:
 
     @property
     def playable(self):
-        """Something this player can show: unprotected linear A/V over ROUTE."""
+        """Something this player can show: unprotected linear A/V over ROUTE, or
+        any ATSC 1.0 virtual channel with a program."""
+        if self.standard == 1:
+            return self.category == 1
         return (self.sls_protocol == 1 and self.category == 1 and not self.protected
                 and bool(self.sls_dst) and bool(self.sls_port))
 

@@ -27,6 +27,7 @@ import struct
 DTV_TUNE = 1
 DTV_CLEAR = 2
 DTV_FREQUENCY = 3
+DTV_MODULATION = 4
 DTV_BANDWIDTH_HZ = 5
 DTV_DELIVERY_SYSTEM = 17
 DTV_STREAM_ID = 42
@@ -48,6 +49,7 @@ SYS_ATSC = 11
 SYS_ATSC3_DEFAULT = 21
 
 NO_STREAM_ID_FILTER = 0xFFFFFFFF
+VSB_8 = 7
 
 
 class _DtvStats(ctypes.Structure):
@@ -186,6 +188,30 @@ class Frontend:
             cmds.append((DTV_STREAM_ID, stream_id))
         cmds.append((DTV_TUNE, 0))
         self._set(cmds)
+
+    def tune_atsc1(self, freq_hz):
+        """Start an ATSC 1.0 (8VSB) tune. The TS then comes out of dvr0 as long as
+        the ALP interface stays down (the bridge feeds ALP *or* the demux)."""
+        if self.alp_raised:
+            self.set_alp_up(False)
+        self._set([(DTV_CLEAR, 0)])
+        self._set([(DTV_DELIVERY_SYSTEM, SYS_ATSC), (DTV_MODULATION, VSB_8),
+                   (DTV_FREQUENCY, int(freq_hz)), (DTV_TUNE, 0)])
+
+    def wait_lock(self, timeout, stop=None):
+        """True once locked, False after `timeout` seconds (or when `stop` is set)."""
+        import time
+        end = time.time() + timeout
+        while time.time() < end:
+            if stop is not None and stop.is_set():
+                return False
+            try:
+                if self.locked():
+                    return True
+            except OSError:
+                pass
+            time.sleep(0.1)
+        return False
 
     def status(self):
         buf = bytearray(4)

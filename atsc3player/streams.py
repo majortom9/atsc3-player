@@ -90,8 +90,11 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     server_version = "atsc3-player"
 
     def do_GET(self):
-        track = {"/video.mp4": "video", "/audio.mp4": "audio"}.get(self.path)
         app = self.server.app
+        if self.path == "/live.ts" and hasattr(app, "ts_subscribe"):
+            self._live_ts(app)
+            return
+        track = {"/video.mp4": "video", "/audio.mp4": "audio"}.get(self.path)
         tsi = app.current_tsi(track) if track else None
         if tsi is None:
             self.send_error(404 if track is None else 503)
@@ -110,6 +113,31 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError, TimeoutError):
             pass
         app.log(f"[HTTP] {self.client_address[0]} left {self.path}")
+
+    def _live_ts(self, app):
+        q = app.ts_subscribe()
+        if q is None:
+            self.send_error(503)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "video/mp2t")
+        self.send_header("Cache-Control", "no-cache, no-store")
+        self.end_headers()
+        app.log(f"[HTTP] {self.client_address[0]} connected to /live.ts")
+        try:
+            while not app.stream_stop.is_set():
+                try:
+                    chunk = q.get(timeout=1)
+                except Exception:
+                    continue
+                if chunk is None:                  # program changed / session closing
+                    break
+                self.wfile.write(chunk)
+        except (BrokenPipeError, ConnectionResetError, TimeoutError):
+            pass
+        finally:
+            app.ts_unsubscribe(q)
+        app.log(f"[HTTP] {self.client_address[0]} left /live.ts")
 
     def log_message(self, fmt, *args):
         pass
@@ -136,6 +164,9 @@ class StreamServer:
         self.httpd.server_close()
 
     def urls(self, host="127.0.0.1"):
+        """(main url, separate audio url or None)."""
+        if getattr(self.app, "single_stream", False):
+            return (f"http://{host}:{self.port}/live.ts", None)
         return (f"http://{host}:{self.port}/video.mp4", f"http://{host}:{self.port}/audio.mp4")
 
 

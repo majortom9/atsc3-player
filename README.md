@@ -1,10 +1,14 @@
 # atsc3-player
 
-An ATSC 3.0 (NextGen TV) receiver for Linux, in Python. With a tuner whose
-driver delivers ATSC 3.0 IP traffic on an ALP network interface (`alp0`), it:
+An ATSC 3.0 (NextGen TV) and ATSC 1.0 receiver for Linux, in Python. With a
+tuner whose driver delivers ATSC 3.0 IP traffic on an ALP network interface
+(`alp0`), and ATSC 1.0 on the usual DVB demux, it:
 
+- **scans** RF channels 2-36 for both standards and keeps one combined channel
+  list, sorted by channel number (a market usually has one ATSC 3.0
+  frequency and many ATSC 1.0 stations),
 - **tunes** the channel (DVBv5, auto or manual PLP selection) and brings
-  `alp0` up,
+  `alp0` up for ATSC 3.0 (down for ATSC 1.0),
 - **lists the services** from the broadcast's SLT, with station logos and
   what's on now and next from the programme guide (ESG),
 - **plays a service** in mpv with HEVC video and Dolby AC-4 audio, in the audio
@@ -16,7 +20,10 @@ driver delivers ATSC 3.0 IP traffic on an ALP network interface (`alp0`), it:
   "Watch" for what's on now,
 - also plays services the broadcast announces but **carries over the
   internet** (their manifest comes over the air, the video from the
-  station's server), at up to 1080p.
+  station's server), at up to 1080p,
+- plays **ATSC 1.0** channels (MPEG-2/H.264 video, AC-3 audio) from the same
+  list, with now/next and the guide from PSIP, served on the LAN as one
+  MPEG-TS, `/live.ts`.
 
 It does its own ROUTE/DASH reassembly; no libatsc3 is needed. Two front ends
 share one package (`atsc3player/`): a GTK 4 app (`atsc3-gui.py`) and a
@@ -81,31 +88,45 @@ Optional: the capture asks for an 8 MB socket buffer, capped by
 cd ~/atsc3-player && ~/atsc3-gui-env/bin/python3 atsc3-gui.py
 ```
 
-1. **Tune.** Pick the RF channel and leave **PLPs** blank (the driver then
-   selects every PLP the channel carries), or enter a list such as `0,1`.
-   **Tune** finds the ATSC 3.0 tuner by itself, whichever adapter number it
-   has. When locked, the status line shows SNR and signal level;
-   **Refresh signal** reads them again.
-2. **Pick a service.** The list fills from the SLT within a few seconds.
-   DRM-protected, app-based and guide services are greyed out. Logos and
-   now/next appear once the programme guide has arrived (a minute or two).
-   Selecting a service starts receiving it.
+1. **Scan** (once). It tries every RF channel 2-36, first as ATSC 1.0, then
+   as ATSC 3.0, and reads the channel list of each one it locks (the PSIP
+   virtual channel table, or the SLT). It takes about two minutes and can be
+   cancelled. The result is saved and replaces the previous list. The tuner
+   is found by itself, whichever adapter number it has.
+2. **Pick a channel.** Each row shows the channel number, name, standard and
+   RF channel. Clicking one tunes its RF channel if needed; double-clicking
+   (or Enter) also starts playing it. DRM-protected and app-based services
+   are greyed out. Logos and now/next appear once the guide has arrived: a
+   minute or two for the ATSC 3.0 ESG, seconds for ATSC 1.0 PSIP.
 3. **Play.** When the audio list fills, **Play** opens mpv in its own window.
-   Change **Audio** to switch language (e.g. English/Spanish). The current
-   programme, its time, rating and description show under the list and in
-   mpv's title.
-4. **Serve on LAN** makes the streams reachable from other machines and shows
+   Change **Audio** to switch language (e.g. English/Spanish); on ATSC 1.0
+   this switches mpv's track without restarting it. The current programme,
+   its time, rating and description show under the list and in mpv's title.
+4. **Tune by hand** (no scan needed): pick the RF channel and the standard,
+   **Auto** (the scan's answer for that channel, else ATSC 1.0 and then
+   ATSC 3.0), **ATSC 3.0** or **ATSC 1.0**, and press **Tune**. For ATSC 3.0,
+   leave **PLPs** blank (the driver then selects every PLP the channel
+   carries), or enter a list such as `0,1`. Channels found this way are added
+   to the list. When locked, the status line shows SNR and signal level;
+   **Refresh signal** reads them again.
+5. **Serve on LAN** makes the streams reachable from other machines and shows
    the command to run there:
 
    ```sh
+   # ATSC 3.0
    mpv http://TUNER-HOST:8080/video.mp4 --audio-file=http://TUNER-HOST:8080/audio.mp4
+   # ATSC 1.0 (every audio track is in the stream; pick one with --alang=spa)
+   mpv http://TUNER-HOST:8080/live.ts
    ```
 
-   Several machines can watch at once; each joins at the newest segment.
-5. **Guide** opens the programme guide: channels on the left, their schedule
-   on the right, details (poster, time, rating, description) below. **Watch**,
-   or double-clicking what's on now, plays that channel.
-6. **Stop tuner** (or closing the window) stops playback, takes `alp0` down
+   Several machines can watch at once; each joins at the newest segment (or
+   the live edge of the TS).
+6. **Guide** opens the programme guide: channels on the left, their schedule
+   on the right, details (poster, time, rating, description) below. It holds
+   the ATSC 3.0 ESG and the PSIP guide of every ATSC 1.0 RF channel tuned
+   this session (PSIP only describes its own multiplex). **Watch**, or
+   double-clicking what's on now, tunes to and plays that channel.
+7. **Stop tuner** (or closing the window) stops playback, takes `alp0` down
    and releases the tuner.
 
 **Over ssh:** run the GUI with `ssh -X` and tick *Show video on this
@@ -117,7 +138,8 @@ quick look.
 like the others. The track line says "internet". The highest video up to
 1080p is used, and the tuner machine downloads it (about 7-8 Mbit/s).
 
-Settings (channel, PLPs, service, language, serve on LAN, mpv path) are kept
+Settings (the scanned channel list, RF channel, standard, PLPs, language,
+serve on LAN, mpv path) are kept
 in `~/.config/atsc3-player/config.json`. To use a particular mpv, add
 `"mpv": "/path/to/mpv"` there.
 
@@ -138,6 +160,14 @@ $P atsc3-player.py alp0 239.255.29.1 5002         # by SLS address, no SLT neede
 
 Other options: `--lan` (play locally and serve), `--http-port`, `--mpv`.
 Stop with `q` in mpv or Ctrl+C.
+
+ATSC 1.0 and the scan have their own small command-line tools:
+
+```sh
+$P -m atsc3player.scan                              # scan RF 2-36 (or --from-rf/--to-rf)
+$P -m atsc3player.atsc1 581000000                   # tune 8-VSB, list the virtual channels
+$P -m atsc3player.atsc1 581000000 --channel 29.1 --lan   # serve 29.1 at /live.ts
+```
 
 ## How it works
 
@@ -161,12 +191,25 @@ Stop with `q` in mpv or Ctrl+C.
 - **Programme guide:** the ESG's S-TSID lists its files (index, SGDU
   containers of Service/Content/Schedule fragments, PNG logos); they are
   collected once complete and parsed in the background.
+- **ATSC 1.0:** with `alp0` down, the bridge sends the 8-VSB transport stream
+  to the DVB demux. The app reads all of it from `dvr0` (a PID 0x2000
+  filter), parses PAT/PMT and PSIP (MGT, TVCT/CVCT, STT, EIT, ETT; A/65),
+  and serves the selected virtual channel as one MPEG-TS: its PMT, PCR and
+  elementary streams, with the PAT rewritten to list only that program.
+  Audio languages come from the PMT's ISO 639 descriptors. The PSIP guide
+  goes into the same guide model as the ESG, so now/next and the Guide
+  window work for both.
 
-`tests/test_signalling.py` checks the SLT/SLS parsers against signalling
-recorded from a live multiplex: `python3 -m tests.test_signalling`.
+Offline tests against data recorded from live multiplexes:
+`python3 -m tests.test_signalling` (ATSC 3.0 SLT/SLS) and
+`python3 -m tests.test_psip` (ATSC 1.0 PAT/PMT/PSIP, 25 s of PSI packets).
 
 ## Troubleshooting
 
+- **Scan finds nothing, or an ATSC 1.0 channel locks but the list stays
+  empty.** Another program has the demux or `alp0` open, or `alp0` was left
+  up (ATSC 1.0 data then goes to ALP, not the demux). Close updateDVB /
+  atsc3-zap and retry.
 - **"No ATSC 3.0 tuner found".** The driver isn't loaded, the stick isn't
   plugged in, or another program (atsc3-zap, updateDVB) holds the tuner.
   `ls /dev/dvb`.
