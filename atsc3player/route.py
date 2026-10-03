@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (c) 2026 Bill Murphy <gc2majortom@gmail.com>
 """ROUTE/ALC object reassembly for one ROUTE session (one destination IP:port).
 
 Packets are placed at their start_offset (A/331 A.3.5.1, the 4 bytes after

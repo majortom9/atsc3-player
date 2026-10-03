@@ -134,3 +134,11 @@ sudo sysctl -w net.core.rmem_max=16777216
 - **Brief picture corruption every so often.** Some segments arrive one
   1400-byte packet short. They're padded so playback continues, but the
   missing data isn't recovered.
+
+## License
+
+GPL-2.0-only; see [LICENSE](LICENSE). `atsc3player/tuner.py` ports the
+tuning logic of atsc3-zap from [koreapyj/cxd28xx](https://github.com/koreapyj/cxd28xx),
+Copyright (c) 2026 Yoonji Park, also GPL-2.0-only. The patches in
+`packaging/patches/` apply to FFmpeg (jellyfin-ffmpeg / rpi-ffmpeg) and follow
+its license.

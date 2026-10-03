@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (c) 2026 Bill Murphy <gc2majortom@gmail.com>
 """atsc3-gui: tune, pick a service and language, play in mpv-ac4.
 
 Run with a Python that can see the system's PyGObject/GTK 4 and has

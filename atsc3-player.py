@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (c) 2026 Bill Murphy <gc2majortom@gmail.com>
 """ATSC 3.0 ROUTE/DASH player: capture a service from an ALP interface (alp0),
 play it in mpv-ac4 and/or serve it over HTTP. The tuner must already be locked
 (atsc3-zap, updateDVB or atsc3-gui); see atsc3-gui.py for the all-in-one app.

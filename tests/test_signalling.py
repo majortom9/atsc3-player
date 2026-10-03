@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (c) 2026 Bill Murphy <gc2majortom@gmail.com>
 """Offline checks of the LLS/SLS parsers against 40 s of real signalling
 captured from a live ATSC 3.0 multiplex (tests/fixtures/live-485mhz.pkl:
 LLS UDP payloads and the TSI-0 ALC packets of every service).

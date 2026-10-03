@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (c) 2026 Bill Murphy <gc2majortom@gmail.com>
 """ATSC 3.0 Low Level Signalling (A/331 section 6): the SLT and friends.
 
 LLS arrives on 224.0.23.60:4937. Each UDP payload is a 4-byte header

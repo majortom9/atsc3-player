@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (c) 2026 Bill Murphy <gc2majortom@gmail.com>
+# Tuning sequence, PLP packing and ALP interface handling ported from
+# atsc3-zap (github.com/koreapyj/cxd28xx, utils/atsc3-zap.c),
+# Copyright (c) 2026 Yoonji Park <koreapyj@dcmys.kr>, GPL-2.0-only.
 """DVBv5 frontend control for ATSC 3.0 tuning (a Python port of atsc3-zap).
 
 Tunes a frontend with the DVBv5 property API, reports lock and signal

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (c) 2026 Bill Murphy <gc2majortom@gmail.com>
 """ROUTE Service Layer Signalling (A/331 section 7): S-TSID + MPD -> tracks.
 
 A ROUTE service's SLS travels on TSI 0 of its SLS session (the address in the

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (c) 2026 Bill Murphy <gc2majortom@gmail.com>
 """Find and run an mpv that can decode AC-4 (mpv-ac4), pointed at our streams."""
 
 import json

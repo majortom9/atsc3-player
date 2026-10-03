@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (c) 2026 Bill Murphy <gc2majortom@gmail.com>
 """atsc3-gui: tune an ATSC 3.0 channel, pick a service and language, and play
 it in mpv-ac4 - optionally serving it to other machines over HTTP."""
 
@@ -8,9 +10,11 @@ import time
 
 import gi
 gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 from . import tuner                       # noqa: E402
+from .guide import GuideWindow, hhmm, texture  # noqa: E402
 from .mpv import Mpv, find_mpv            # noqa: E402
 from .session import Session              # noqa: E402
 from .streams import lan_address          # noqa: E402
@@ -102,7 +106,14 @@ class Window(Gtk.ApplicationWindow):
         srow.append(self.rate)
 
         # -- services ---------------------------------------------------------
-        box.append(Gtk.Label(label="<b>Services</b>", use_markup=True, xalign=0))
+        hrow = Gtk.Box(spacing=6)
+        box.append(hrow)
+        hrow.append(Gtk.Label(label="<b>Services</b>", use_markup=True, xalign=0, hexpand=True))
+        self.guide_btn = Gtk.Button(label="Guide", sensitive=False)
+        self.guide_btn.set_tooltip_text("Programme guide (ESG) for every channel")
+        self.guide_btn.connect("clicked", lambda *_: self._open_guide())
+        hrow.append(self.guide_btn)
+        self.guide_win = None
         self.svc_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
         self.svc_list.connect("row-selected", self._on_service)
         sc = Gtk.ScrolledWindow(vexpand=True, min_content_height=180)
@@ -110,6 +121,8 @@ class Window(Gtk.ApplicationWindow):
         box.append(sc)
 
         # -- playback -----------------------------------------------------------
+        self.now_playing = Gtk.Label(label="", xalign=0, wrap=True, selectable=True)
+        box.append(self.now_playing)
         prow = Gtk.Box(spacing=6)
         box.append(prow)
         prow.append(Gtk.Label(label="Audio"))
@@ -157,6 +170,8 @@ class Window(Gtk.ApplicationWindow):
         self.log(f"mpv: {binary or 'NOT FOUND - install mpv-ac4'}")
         self._update_remote()
         GLib.timeout_add(500, self._poll)
+        GLib.timeout_add_seconds(20, self._refresh_epg)
+        self._last_title = None
 
     # -- helpers ----------------------------------------------------------------
     def log(self, msg):
@@ -268,7 +283,8 @@ class Window(Gtk.ApplicationWindow):
             self.session = Session(ifname, lan=self.lan.get_active(), log=self.log,
                                    on_services=lambda s: GLib.idle_add(self._set_services, s),
                                    on_tracks=lambda *a: GLib.idle_add(self._set_tracks, *a),
-                                   on_status=lambda st: GLib.idle_add(self._show_rate, st))
+                                   on_status=lambda st: GLib.idle_add(self._show_rate, st),
+                                   on_guide=lambda g: GLib.idle_add(self._on_guide, g))
             self.session.start()
         except OSError as e:
             self.session = None
@@ -292,21 +308,104 @@ class Window(Gtk.ApplicationWindow):
         self.services = list(services)
         while (row := self.svc_list.get_first_child()) is not None:
             self.svc_list.remove(row)
+        want = keep.service_id if keep else self.cfg.get("service_id")
         for s in self.services:
             note = []
             if s.protected:
                 note.append("DRM protected")
             if s.category != 1:
                 note.append(s.category_name)
-            text = f"{s.channel:>6}   {s.name:<10} {s.service_id:>6}   {', '.join(note)}"
-            lbl = Gtk.Label(label=text, xalign=0, css_classes=["monospace"])
-            row = Gtk.ListBoxRow(child=lbl, sensitive=s.playable)
-            row.service = s
+            hb = Gtk.Box(spacing=10, margin_top=2, margin_bottom=2)
+            icon = Gtk.Picture(width_request=64, height_request=48, can_shrink=True,
+                               content_fit=Gtk.ContentFit.CONTAIN)
+            hb.append(icon)
+            vb = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            head = Gtk.Label(xalign=0, use_markup=True,
+                             label=f"<b>{GLib.markup_escape_text(s.channel)}  {GLib.markup_escape_text(s.name)}</b>"
+                                   f"  <small>{s.service_id}  {GLib.markup_escape_text(', '.join(note))}</small>")
+            epg = Gtk.Label(xalign=0, label="", ellipsize=3, css_classes=["dim-label"])
+            vb.append(head)
+            vb.append(epg)
+            hb.append(vb)
+            row = Gtk.ListBoxRow(child=hb, sensitive=s.playable)
+            row.service, row.icon, row.epg = s, icon, epg
             self.svc_list.append(row)
-            want = (keep.service_id if keep else self.cfg.get("service_id"))
             if s.service_id == want and s.playable:
                 self.svc_list.select_row(row)
+        self._refresh_epg()
         return False
+
+    # -- programme guide -------------------------------------------------------
+    def _on_guide(self, guide):
+        self.guide_btn.set_sensitive(bool(guide.services))
+        self._refresh_epg()
+        if self.guide_win:
+            self.guide_win.refresh()
+        return False
+
+    def _refresh_epg(self):
+        if not self.session:
+            return True
+        g = self.session.esg.guide
+        row = self.svc_list.get_first_child()
+        while row is not None:
+            s = getattr(row, "service", None)
+            if s:
+                gs = g.service_for(s.global_id, s.major, s.minor)
+                if gs and gs.icon in g.icons and not getattr(row, "icon_set", False):
+                    tex = texture(g.icons[gs.icon])
+                    if tex:
+                        row.icon.set_paintable(tex)
+                        row.icon_set = True
+                pc, cs, pn, ns = self.session.now_next(s)
+                parts = []
+                if pc:
+                    parts.append(f"Now: {pc.title} (until {hhmm(cs.end)})")
+                if pn:
+                    parts.append(f"Next {hhmm(ns.start)}: {pn.title}")
+                row.epg.set_text("   ".join(parts))
+            row = row.get_next_sibling()
+        self._update_now_playing()
+        return True
+
+    def _update_now_playing(self):
+        svc = self.session.service if self.session else None
+        if not svc or not self.player:
+            self.now_playing.set_text("")
+            self._last_title = None
+            return
+        pc, cs, pn, ns = self.session.now_next(svc)
+        title = f"{svc.channel} {svc.name}" + (f" - {pc.title}" if pc else "")
+        info = title + (f"   ({hhmm(cs.start)}-{hhmm(cs.end)}" + (f", {pc.rating}" if pc.rating else "") + ")" if pc else "")
+        if pc and pc.description:
+            info += "\n" + pc.description
+        self.now_playing.set_text(info)
+        if title != self._last_title:
+            self._last_title = title
+            self.player.command("set_property", "force-media-title", title)
+
+    def _open_guide(self):
+        if not self.session:
+            return
+        if self.guide_win is None:
+            self.guide_win = GuideWindow(self, self.session, on_watch=self._watch)
+            self.guide_win.connect("close-request", self._guide_closed)
+        self.guide_win.present()
+
+    def _guide_closed(self, *_):
+        self.guide_win = None
+        return False
+
+    def _watch(self, service):
+        """From the guide: tune to `service` and play it."""
+        row = self.svc_list.get_first_child()
+        while row is not None:
+            if getattr(row, "service", None) and row.service.service_id == service.service_id:
+                self.svc_list.select_row(row)
+                break
+            row = row.get_next_sibling()
+        self._play_when_ready = True
+        self._update_buttons()
 
     def _selected_service(self):
         row = self.svc_list.get_selected_row()
@@ -328,8 +427,6 @@ class Window(Gtk.ApplicationWindow):
 
     def _set_tracks(self, tracks, video, audio, delivery):
         self.tracks = tracks
-        if delivery == "broadband" and not tracks:
-            self.track_info.set_text("broadband-only service (internet delivery), not on the air")
         self._fill_langs(audio)
         self._update_buttons()
         return False
@@ -341,12 +438,17 @@ class Window(Gtk.ApplicationWindow):
         self.langs = [t for t in self.tracks if t.kind == "audio"]
         for t in self.langs:
             self.lang_model.append(t.label)
-        if current in self.langs:
-            self.lang.set_selected(self.langs.index(current))
+        if current:
+            idx = next((i for i, t in enumerate(self.langs)
+                        if (t.rep_id, t.lang) == (current.rep_id, current.lang)), None)
+            if idx is not None:
+                self.lang.set_selected(idx)
         self.lang.set_sensitive(len(self.langs) > 1)
-        v = next((t for t in self.tracks if t.kind == "video"), None)
+        v = self.session.video if self.session else None
         if v and current:
-            self.track_info.set_text(f"video {v.codecs.split('.')[0]}, audio {current.label}")
+            where = "internet, " if self.session.broadband else ""
+            res = f" {v.role}" if v.role else ""
+            self.track_info.set_text(f"{where}video {v.codecs.split('.')[0]}{res}, audio {current.label}")
         self._filling = False
         self._update_buttons()
 
@@ -369,6 +471,10 @@ class Window(Gtk.ApplicationWindow):
         return bool(self.session and self.session.video and self.session.audio)
 
     def _update_buttons(self):
+        if getattr(self, "_play_when_ready", False) and self._ready() and self.player is None:
+            self._play_when_ready = False
+            self._play()
+            return
         self.play_btn.set_sensitive(self._ready() and self.player is None)
         self.stop_btn.set_sensitive(self.player is not None)
 
@@ -383,7 +489,9 @@ class Window(Gtk.ApplicationWindow):
                               local_display=self.over_ssh and self.on_screen.get_active())
         except (OSError, FileNotFoundError) as e:
             self.log(f"can't start mpv: {e}")
+        self._last_title = None
         self._update_buttons()
+        GLib.timeout_add(1500, lambda: (self._update_now_playing(), False)[1])
 
     def _stop_player(self):
         if self.player:
