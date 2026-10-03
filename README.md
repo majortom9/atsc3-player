@@ -1,139 +1,188 @@
 # atsc3-player
 
-A standalone ATSC 3.0 receiver in one Python file. It captures the IP traffic a
-tuner driver delivers on its ALP network interface (`alp0`), reassembles the
-ROUTE/DASH objects itself (LCT/ALC parsing, no libatsc3), and then either:
+An ATSC 3.0 (NextGen TV) receiver for Linux, in Python. With a tuner whose
+driver delivers ATSC 3.0 IP traffic on an ALP network interface (`alp0`), it:
 
-- plays the service locally in mpv (HEVC video + AC-4 audio), and/or
-- serves it over HTTP as two live streams, `/video.mp4` and `/audio.mp4`, for
-  playback on another machine.
+- **tunes** the channel (DVBv5, auto or manual PLP selection) and brings
+  `alp0` up,
+- **lists the services** from the broadcast's SLT, with station logos and
+  what's on now and next from the programme guide (ESG),
+- **plays a service** in mpv with HEVC video and Dolby AC-4 audio, in the audio
+  language you pick,
+- optionally **serves it on the LAN** as two live HTTP streams,
+  `/video.mp4` and `/audio.mp4`, so any machine with an AC-4 capable mpv can
+  watch,
+- shows a **programme guide** (72 hours, descriptions, ratings, posters) with
+  "Watch" for what's on now,
+- also plays services the broadcast announces but **carries over the
+  internet** (their manifest comes over the air, the video from the
+  station's server), at up to 1080p.
 
-Tested on Linux Mint 22 (Python 3.12) with a GTMEDIA HDTV Mate (USB
-`048d:9306`) on the modified koreapyj it930x/cxd2878 driver
-([majortom9/cxd28xx](https://github.com/majortom9/cxd28xx)), against a live
-ATSC 3.0 broadcast.
+It does its own ROUTE/DASH reassembly; no libatsc3 is needed. Two front ends
+share one package (`atsc3player/`): a GTK 4 app (`atsc3-gui.py`) and a
+command-line player (`atsc3-player.py`).
 
-For a C alternative with a terminal UI, the same fixes for this setup are in
-the libatsc3 fork [majortom9/libatsc3](https://github.com/majortom9/libatsc3)
+Tested with a GTMEDIA HDTV Mate (USB `048d:9306`) on the it930x/cxd2878
+driver ([majortom9/cxd28xx](https://github.com/majortom9/cxd28xx), also
+in-tree in [majortom9/media-udl](https://gitlab.com/majortom9/media-udl)),
+on x86_64 Linux (Linux Mint 22, Arch/Manjaro) and a Raspberry Pi 4 (32-bit
+Arch Linux ARM userland), against a live US ATSC 3.0 multiplex. The full
+from-scratch setup (driver, AC-4 ffmpeg and mpv, Raspberry Pi packages) is in
+the [wiki](https://github.com/majortom9/atsc3-player/wiki).
+
+For a C alternative with a terminal UI, see the libatsc3 fork
+[majortom9/libatsc3](https://github.com/majortom9/libatsc3)
 (`atsc3_listener_metrics_ncurses_httpd_isobmff`).
 
 ## Requirements
 
-- **A tuner driver that exposes ATSC 3.0 ALP as a network interface.** The
-  script only reads `alp0`; something else must tune, lock and bring the
-  interface up (see [Running](#running)). The tested driver and its
-  `atsc3-zap` tuning tool (in `utils/`) are in
-  [majortom9/cxd28xx](https://github.com/majortom9/cxd28xx).
-- **Python 3.8+.** Standard library only; nothing to `pip install`.
-- **For local playback:** an mpv build with an AC-4 decoder, and its ffmpeg
-  libraries. The script expects them at these fixed paths:
-  - `~/local/mpv-ac4/bin/mpv` (libraries in `~/local/mpv-ac4/lib/x86_64-linux-gnu`)
-  - `~/local/jellyfin-ffmpeg-dev/lib`
+- **The tuner driver**, with ALP delivered on an `alp*` network interface
+  ([majortom9/cxd28xx](https://github.com/majortom9/cxd28xx) or the media-udl
+  kernel). The app tunes by itself; `atsc3-zap` is not needed.
+- **Python 3.10+.** The player uses the standard library only; the GUI also
+  needs **PyGObject with GTK 4**:
+  - Arch / Manjaro / Arch Linux ARM: `sudo pacman -S --needed python-gobject gtk4`
+  - Ubuntu / Debian / Mint: `sudo apt install python3-gi gir1.2-gtk-4.0`
+- **mpv with an AC-4 decoder** on every machine that plays. The app finds,
+  in this order: `/usr/bin/mpv-ac4` (the Raspberry Pi package in
+  `packaging/rpi/mpv-ac4`), `~/local/mpv-ac4/bin/mpv` with
+  `~/local/jellyfin-ffmpeg-dev/lib` (the x86_64 build in the wiki), then
+  `mpv-ac4` / `mpv` on the PATH. The decoder must include patches 0101 and
+  0102 (`packaging/patches/`), or damaged over-the-air frames crash mpv or
+  turn the sound into a loud buzz.
+- **Internet access** on the tuner machine for the internet-delivered
+  services and the programme posters; everything else is over the air.
 
-  Edit `start_local_player()` in `atsc3-player.py` if yours live elsewhere.
-  `--serve-only` needs neither.
-- **For remote playback:** mpv on the viewing machine. Audio needs an AC-4
-  decoder there too; without one you get video only. Use a decoder that
-  includes jellyfin-ffmpeg patch `0101-ac4dec-reject-damaged-frames-instead-of-asserting.patch`,
-  or damaged audio frames abort mpv.
-
-## Setting up the Python environment
-
-The script opens a raw `AF_PACKET` socket, which needs `CAP_NET_RAW`. Rather
-than running it as root, give that one capability to a private copy of the
-Python interpreter inside a virtual environment:
+## Setting up
 
 ```sh
-python3 -m venv --copies ~/atsc3-env
-sudo setcap cap_net_raw+ep "$(readlink -f ~/atsc3-env/bin/python3)"
-getcap ~/atsc3-env/bin/python3*     # should list cap_net_raw=ep
-cp atsc3-player.py ~/atsc3-env/
+git clone https://github.com/majortom9/atsc3-player.git ~/atsc3-player
+python3 -m venv --copies --system-site-packages ~/atsc3-gui-env
+sudo setcap cap_net_raw,cap_net_admin+ep "$(readlink -f ~/atsc3-gui-env/bin/python3)"
+getcap "$(readlink -f ~/atsc3-gui-env/bin/python3)"     # cap_net_admin,cap_net_raw=ep
 ```
 
-**`--copies` is essential.** Without it, `bin/python3` is a symlink to the
-system interpreter, and `setcap` would grant raw-socket access to every Python
-program on the machine. With `--copies`, only this environment's own binary
-gets the capability.
+- **`--copies`** gives the venv its own Python binary. Without it, `setcap`
+  would land on the system Python and give every Python program these rights.
+- **`--system-site-packages`** lets the venv see the system's PyGObject and
+  GTK 4 (they aren't installable with pip).
+- **The two capabilities:** `cap_net_raw` to capture on `alp0`,
+  `cap_net_admin` to bring `alp0` up after lock and down on exit. Redo the
+  `setcap` whenever the venv is recreated or the system Python is updated.
+- Your user must be able to open `/dev/dvb/*` (usually the `video` group).
 
-Repeat the `setcap` step whenever you recreate the venv. The capability lives
-on the binary file, so it isn't carried over by copying or by git.
+Optional: the capture asks for an 8 MB socket buffer, capped by
+`net.core.rmem_max`. If the GUI shows dropped packets, raise it:
+`sudo sysctl -w net.core.rmem_max=16777216`.
 
-Optional: the script asks for an 8 MB socket receive buffer, which the kernel
-caps at `net.core.rmem_max`. If packets are dropped on a slow machine (the
-script reports kernel drops every 50,000 frames), raise the cap:
+## The GUI
 
 ```sh
-sudo sysctl -w net.core.rmem_max=16777216
+cd ~/atsc3-player && ~/atsc3-gui-env/bin/python3 atsc3-gui.py
 ```
 
-## Running
-
-1. **Tune and lock**, which also brings `alp0` up:
-
-   ```sh
-   atsc3-zap 485000000 --plp 0,1 -a 1
-   ```
-
-   Or tune from updateDVB, then `sudo ip link set alp0 up`. With the modified
-   driver, leaving the PLP unset selects every PLP the channel carries;
-   otherwise name them, as above.
-
-   Check the link before starting the player: `ip link show alp0` should show
-   `LOWER_UP` and no `NO-CARRIER`.
-
-2. **Start the player** from the venv:
-
-   ```sh
-   source ~/atsc3-env/bin/activate
-   cd ~/atsc3-env
-   python atsc3-player.py alp0                 # play locally + serve over HTTP
-   python atsc3-player.py alp0 --serve-only    # HTTP only, no local window
-   ```
-
-   Positional arguments are `interface target_ip port`, defaulting to
-   `alp0 239.255.29.1 5002`, the ROUTE session of the tested service.
-
-3. **Watch remotely.** The player prints the exact command at startup, using
-   the machine's LAN address:
+1. **Tune.** Pick the RF channel and leave **PLPs** blank (the driver then
+   selects every PLP the channel carries), or enter a list such as `0,1`.
+   **Tune** finds the ATSC 3.0 tuner by itself, whichever adapter number it
+   has. When locked, the status line shows SNR and signal level;
+   **Refresh signal** reads them again.
+2. **Pick a service.** The list fills from the SLT within a few seconds.
+   DRM-protected, app-based and guide services are greyed out. Logos and
+   now/next appear once the programme guide has arrived (a minute or two).
+   Selecting a service starts receiving it.
+3. **Play.** When the audio list fills, **Play** opens mpv in its own window.
+   Change **Audio** to switch language (e.g. English/Spanish). The current
+   programme, its time, rating and description show under the list and in
+   mpv's title.
+4. **Serve on LAN** makes the streams reachable from other machines and shows
+   the command to run there:
 
    ```sh
    mpv http://TUNER-HOST:8080/video.mp4 --audio-file=http://TUNER-HOST:8080/audio.mp4
    ```
 
-   Each viewer joins at the newest segment, and several can watch at once.
+   Several machines can watch at once; each joins at the newest segment.
+5. **Guide** opens the programme guide: channels on the left, their schedule
+   on the right, details (poster, time, rating, description) below. **Watch**,
+   or double-clicking what's on now, plays that channel.
+6. **Stop tuner** (or closing the window) stops playback, takes `alp0` down
+   and releases the tuner.
 
-4. **Stop** with `q` in the local mpv window or Ctrl+C in the terminal. Either
-   shuts everything down cleanly; a second Ctrl+C forces an exit.
+**Over ssh:** run the GUI with `ssh -X` and tick *Show video on this
+machine's own screen*, so mpv opens on the tuner machine's display. A
+forwarded window is far too slow for 60 fps video. Untick it only for a
+quick look.
+
+**Internet-delivered services** (on the tested multiplex: T2 and PBTV) play
+like the others. The track line says "internet". The highest video up to
+1080p is used, and the tuner machine downloads it (about 7-8 Mbit/s).
+
+Settings (channel, PLPs, service, language, serve on LAN, mpv path) are kept
+in `~/.config/atsc3-player/config.json`. To use a particular mpv, add
+`"mpv": "/path/to/mpv"` there.
+
+## The command-line player
+
+The tuner must already be locked (the GUI, `python3 -m atsc3player.tuner`,
+`atsc3-zap` or updateDVB).
+
+```sh
+P=~/atsc3-gui-env/bin/python3
+$P -m atsc3player.tuner 485000000 --plp 0,1       # tune + alp0 up; Ctrl+C to stop
+$P atsc3-player.py --list                         # services in the SLT
+$P atsc3-player.py --service 5002                 # play in mpv
+$P atsc3-player.py --service 5002 --lang spa      # Spanish audio
+$P atsc3-player.py --service 5002 --serve-only    # only serve on the LAN
+$P atsc3-player.py alp0 239.255.29.1 5002         # by SLS address, no SLT needed
+```
+
+Other options: `--lan` (play locally and serve), `--http-port`, `--mpv`.
+Stop with `q` in mpv or Ctrl+C.
 
 ## How it works
 
-- Segments and init files are cached in `/tmp/atsc3_cache`. About the last two
-  minutes of segments are kept; init segments survive restarts because the
-  broadcast only resends them on its own carousel.
-- Tracks are chosen by transport session (TSI): `100` is HEVC video and `200`
-  is the English AC-4 main audio (`TRACKS` at the top of the script). `201` is
-  Spanish and `300` is captions on the tested station; other stations may
-  differ.
-- Before any segment reaches mpv or an HTTP client it is checked: a segment
-  that doesn't start with a valid MP4 box (the tail of an object caught
-  mid-way at startup) is dropped, and one whose last `mdat` is short (a lost
-  packet) is zero-padded so the next segment stays aligned. A demuxer reading
-  a pipe can't recover from either on its own.
+- **One capture thread** reads `alp0` raw and splits the traffic: LLS (the
+  SLT, inside a signed multi-table on the tested station), the selected
+  service's ROUTE session, and the ESG's ROUTE session.
+- **Service signalling:** the service's SLS bundle (MIME, often
+  multipart/signed; signatures are not checked) gives the S-TSID and the DASH
+  MPD. Together they say which transport session (TSI) carries the video and
+  each audio language, and how the init and media objects are numbered.
+- **ROUTE reassembly** places each packet at its `start_offset` (a lost
+  packet leaves a hole in place instead of shifting the rest) and stores only
+  the tracks being played, in a per-instance cache under
+  `$XDG_RUNTIME_DIR`.
+- **Streams:** each track becomes one continuous fMP4 stream (init, then
+  segments in order). Segments that start mid-object are dropped; a short
+  last `mdat` is zero-padded so a pipe-reading demuxer stays aligned.
+- **Internet-delivered services:** no S-TSID, an https BaseURL in the MPD.
+  The app downloads segments from the MPD's SegmentTimeline into the same
+  cache.
+- **Programme guide:** the ESG's S-TSID lists its files (index, SGDU
+  containers of Service/Content/Schedule fragments, PNG logos); they are
+  collected once complete and parsed in the background.
+
+`tests/test_signalling.py` checks the SLT/SLS parsers against signalling
+recorded from a live multiplex: `python3 -m tests.test_signalling`.
 
 ## Troubleshooting
 
-- **Stuck at "Waiting for DASH Manifest".** No ROUTE traffic is arriving.
-  Check that `alp0` shows `LOWER_UP`, and that packets are flowing:
+- **"No ATSC 3.0 tuner found".** The driver isn't loaded, the stick isn't
+  plugged in, or another program (atsc3-zap, updateDVB) holds the tuner.
+  `ls /dev/dvb`.
+- **Locked, but the service list stays empty.** `alp0` isn't carrying data:
   `cat /sys/class/net/alp0/statistics/rx_packets` should climb by thousands a
-  second. A trickle of a few a second means only the signalling PLP is
-  selected; tune with `--plp 0,1` or use the auto-PLP driver.
-- **"Raw sockets require root privileges or setcap".** The `setcap` step is
-  missing, or you're not running the venv's `python`.
-- **mpv aborts with `Assertion ... failed at libavcodec/ac4dec.c`.** The
-  decoder lacks patch 0101; see [Requirements](#requirements).
-- **Brief picture corruption every so often.** Some segments arrive one
-  1400-byte packet short. They're padded so playback continues, but the
-  missing data isn't recovered.
+  second. A trickle means only the signalling PLP is selected; leave PLPs
+  blank or use `0,1`.
+- **"Can't bring the ALP interface up" / "Can't capture".** The `setcap` step
+  is missing or was lost; see [Setting up](#setting-up).
+- **Sound but no picture when started over ssh.** The video went to the
+  forwarded display; tick *Show video on this machine's own screen*.
+- **mpv aborts with `Assertion ... ac4dec.c`, or the sound turns into a loud
+  buzz after a while.** The AC-4 decoder lacks patch 0101 or 0102.
+- **Raspberry Pi: choppy video.** Use `vo=gpu`, `hwdec=drm` and
+  `profile=fast` (the `mpv-ac4` package's defaults), watch at native size and
+  turn off the desktop's compositing; see the wiki.
 
 ## License
 
