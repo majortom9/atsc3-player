@@ -186,7 +186,8 @@ def parse_eit(sec, gps_utc):
         j = i + 10 + tl
         dl = struct.unpack("!H", sec[j:j + 2])[0] & 0x0FFF
         t0 = GPS_EPOCH + start - gps_utc
-        out.append(Event(source_id, event_id, t0, t0 + length, title))
+        if 0 < t0 < t0 + length < 2**31:   # skip junk times (32-bit time_t on armv7)
+            out.append(Event(source_id, event_id, t0, t0 + length, title))
         i = j + 2 + dl
     return out
 

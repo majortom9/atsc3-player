@@ -12,7 +12,10 @@ _posters = {}                  # url -> bytes (or None while loading / on failur
 
 
 def hhmm(t):
-    return time.strftime("%H:%M", time.localtime(t))
+    try:
+        return time.strftime("%H:%M", time.localtime(t))
+    except (OverflowError, OSError, ValueError):
+        return "--:--"
 
 
 def texture(data):

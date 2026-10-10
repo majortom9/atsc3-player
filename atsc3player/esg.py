@@ -186,8 +186,12 @@ def parse_fragment(guide, ftype, xml):
         slots = []
         for cref in _iter(root, "ContentReference"):
             for pw in _iter(cref, "PresentationWindow"):
-                slots.append(Slot(ntp_to_unix(pw.get("startTime")), ntp_to_unix(pw.get("endTime")),
-                                  _attr(cref, "idRef")))
+                try:
+                    start, end = ntp_to_unix(pw.get("startTime")), ntp_to_unix(pw.get("endTime"))
+                except (TypeError, ValueError):
+                    continue
+                if 0 < start < end < 2**31:     # skip junk times (32-bit time_t on armv7)
+                    slots.append(Slot(start, end, _attr(cref, "idRef")))
         # several Schedule fragments can cover one service: merge, keyed by start
         merged = {s.start: s for s in guide.schedule.get(sid, [])}
         merged.update({s.start: s for s in slots})
