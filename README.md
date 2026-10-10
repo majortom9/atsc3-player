@@ -107,8 +107,10 @@ cd ~/atsc3-player && ~/atsc3-gui-env/bin/python3 atsc3-gui.py
    ATSC 3.0), **ATSC 3.0** or **ATSC 1.0**, and press **Tune**. For ATSC 3.0,
    leave **PLPs** blank (the driver then selects every PLP the channel
    carries), or enter a list such as `0,1`. Channels found this way are added
-   to the list. When locked, the status line shows SNR and signal level;
-   **Refresh signal** reads them again.
+   to the list. When locked, the status line shows SNR and signal level,
+   re-read every two seconds while **Live signal** is ticked - handy while
+   aiming the antenna. Untick it if playback stutters on a slow USB link
+   (each read is a burst of I2C traffic over the link that carries the stream).
 5. **Serve on LAN** makes the streams reachable from other machines and shows
    the command to run there:
 

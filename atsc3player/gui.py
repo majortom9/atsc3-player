@@ -27,6 +27,7 @@ CONFIG = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~
 
 STANDARDS = ["Auto", "ATSC 3.0", "ATSC 1.0"]
 AUTO_ATSC1_WAIT_S = 2.0          # Auto: how long to try 8VSB before trying ATSC 3.0
+STATS_INTERVAL_S = 2             # live signal: seconds between SNR/level reads while locked
 HIDDEN_CATEGORIES = (4, 5, 6)    # ESG, EAS and DRM-data services are not channels
 
 
@@ -136,8 +137,9 @@ class Window(Gtk.ApplicationWindow):
         box.append(srow)
         self.status = Gtk.Label(label="Not tuned", xalign=0, hexpand=True, selectable=True)
         srow.append(self.status)
-        self.stats_btn = Gtk.Button(label="Refresh signal", sensitive=False)
-        self.stats_btn.connect("clicked", lambda *_: self._read_stats())
+        self.stats_btn = Gtk.CheckButton(label="Live signal", active=True, sensitive=False)
+        self.stats_btn.set_tooltip_text(f"While locked, re-read SNR and signal level every "
+                                        f"{STATS_INTERVAL_S} s (e.g. while aiming the antenna)")
         srow.append(self.stats_btn)
         self.rate = Gtk.Label(label="", xalign=1)
         srow.append(self.rate)
@@ -219,6 +221,7 @@ class Window(Gtk.ApplicationWindow):
         self._rebuild_list()
         GLib.timeout_add(500, self._poll)
         GLib.timeout_add_seconds(20, self._refresh_epg)
+        GLib.timeout_add_seconds(STATS_INTERVAL_S, self._live_stats)
         self._last_title = None
 
     # -- helpers ----------------------------------------------------------------
@@ -339,6 +342,12 @@ class Window(Gtk.ApplicationWindow):
         self.status.set_text(", ".join(bits) + f"  (ATSC {'1.0' if std == 1 else '3.0'}, "
                                                f"RF {_RF_OF.get(freq, '?')}, {freq / 1e6:.0f} MHz)")
 
+    def _live_stats(self):
+        if (self.locked and self.stats_btn.get_sensitive() and self.stats_btn.get_active()
+                and not self._scanning()):
+            self._read_stats()
+        return True
+
     def _poll(self):
         if self.fe and self.tuned and not self._scanning():
             try:
@@ -361,7 +370,7 @@ class Window(Gtk.ApplicationWindow):
                     self.log("locked (ATSC 1.0)")
                     self._read_stats()
                     self._open_session(None)
-                self.stats_btn.set_sensitive(True)
+                self.stats_btn.set_sensitive(self.session is not None)   # keep a capture error visible
             elif not locked and self.locked:
                 self.locked = False
                 self.status.set_text("Lock lost - waiting ...")
