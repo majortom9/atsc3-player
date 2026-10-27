@@ -88,6 +88,17 @@ Optional: the capture asks for an 8 MB socket buffer, capped by
 cd ~/atsc3-player && ~/atsc3-gui-env/bin/python3 atsc3-gui.py
 ```
 
+To start it as plain `atsc3-gui` instead, install the wrapper, which runs
+the venv's Python for you and warns if it has lost its capabilities:
+
+```sh
+sudo install -m 755 ~/atsc3-player/packaging/atsc3-gui /usr/local/bin/
+```
+
+It looks for the checkout in `~/atsc3-player`, then `~/atsc3-gui`, and the
+venv in `~/atsc3-gui-env`. Set `ATSC3_GUI_DIR` or `ATSC3_GUI_PYTHON` if
+yours are elsewhere.
+
 1. **Scan** (once). It tries every RF channel 2-36, first as ATSC 1.0, then
    as ATSC 3.0, and reads the channel list of each one it locks (the PSIP
    virtual channel table, or the SLT). It takes about two minutes and can be

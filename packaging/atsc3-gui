@@ -1,0 +1,38 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (c) 2026 Bill Murphy <gc2majortom@gmail.com>
+#
+# atsc3-gui: start the GUI with the venv Python that has cap_net_raw,cap_net_admin.
+# Install with:  sudo install -m 755 packaging/atsc3-gui /usr/local/bin/
+#
+# ATSC3_GUI_DIR     the checkout holding atsc3-gui.py
+#                   (default: ~/atsc3-player, else ~/atsc3-gui)
+# ATSC3_GUI_PYTHON  the venv's python3 (default: ~/atsc3-gui-env/bin/python3)
+
+py=${ATSC3_GUI_PYTHON:-$HOME/atsc3-gui-env/bin/python3}
+
+dir=$ATSC3_GUI_DIR
+if [ -z "$dir" ]; then
+    for d in "$HOME/atsc3-player" "$HOME/atsc3-gui"; do
+        [ -f "$d/atsc3-gui.py" ] && dir=$d && break
+    done
+fi
+if [ -z "$dir" ] || [ ! -f "$dir/atsc3-gui.py" ]; then
+    echo "atsc3-gui: can't find atsc3-gui.py; set ATSC3_GUI_DIR to the checkout" >&2
+    exit 1
+fi
+if [ ! -x "$py" ]; then
+    echo "atsc3-gui: no Python at $py; set ATSC3_GUI_PYTHON or make the venv (see README.md)" >&2
+    exit 1
+fi
+
+real=$(readlink -f "$py")
+if command -v getcap >/dev/null 2>&1; then
+    case $(getcap "$real") in
+        *cap_net_admin*cap_net_raw*|*cap_net_raw*cap_net_admin*) ;;
+        *) echo "atsc3-gui: warning: $real lacks cap_net_raw,cap_net_admin; ATSC 3.0 won't work. Fix with:" >&2
+           echo "  sudo setcap cap_net_raw,cap_net_admin+ep $real" >&2 ;;
+    esac
+fi
+
+cd "$dir" && exec "$py" atsc3-gui.py "$@"
